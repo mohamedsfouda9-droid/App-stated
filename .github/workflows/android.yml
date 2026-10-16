@@ -23,7 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -35,7 +35,6 @@ jobs:
           packages: ''
 
       - name: Install Android packages
-        shell: bash
         run: |
           set -e
           yes | sdkmanager --licenses || true
@@ -44,8 +43,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Find and extract project ZIP
-        shell: bash
+      - name: Extract project ZIP
         run: |
           set -e
           ZIP_FILE=$(find . -maxdepth 2 -type f \
@@ -57,36 +55,29 @@ jobs:
             exit 1
           fi
 
-          echo "Extracting: $ZIP_FILE"
           mkdir -p extracted
           unzip -oq "$ZIP_FILE" -d extracted
 
       - name: Find Android project
-        shell: bash
         run: |
           set -e
-
           SETTINGS=$(find extracted -type f \
             \( -name settings.gradle -o -name settings.gradle.kts \) \
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Gradle settings file not found."
-            find extracted -maxdepth 4 -type f | head -100
+            echo "ERROR: Android Gradle project not found in ZIP."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
 
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
       - name: Build APK
-        shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -94,30 +85,24 @@ jobs:
           if [ -f gradlew ]; then
             chmod +x gradlew
             ./gradlew --no-daemon assembleDebug
-          elif command -v gradle >/dev/null 2>&1; then
-            gradle --no-daemon assembleDebug
           else
-            echo "ERROR: Gradle is unavailable."
-            exit 1
+            gradle --no-daemon assembleDebug
           fi
 
-      - name: Find generated APK
-        shell: bash
+      - name: Find APK
         run: |
           set -e
-
           APK=$(find "$PROJECT_DIR" -type f \
-            -path "*/build/outputs/apk/*/*.apk" \
+            -path "*/build/outputs/apk/debug/*.apk" \
             -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Build finished but no APK was found."
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
-          mkdir -p apk-output
-          cp "$APK" apk-output/Mozakarty.apk
-          echo "APK ready."
+          mkdir -p "$GITHUB_WORKSPACE/apk-output"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-output/Mozakarty.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
